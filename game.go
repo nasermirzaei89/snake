@@ -5,7 +5,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 	"image/color"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -23,7 +25,7 @@ const (
 	directionDown
 )
 
-const waitTicks = 10
+const waitBase = 10
 
 type point struct {
 	x, y int
@@ -43,7 +45,7 @@ type game struct {
 	highScore        int
 }
 
-func (g *game) seeding() {
+func (g *game) sow() {
 	if len(g.snake)+len(g.walls) == screenWidth*screenHeight {
 		g.gameOver = true
 
@@ -81,25 +83,39 @@ func (g *game) score() int {
 	return len(g.snake) - 2
 }
 
+func (g *game) wait() int {
+	res := waitBase - g.score()/10
+
+	if res < 1 {
+		return 1
+	}
+
+	return res
+}
+
 func (g *game) Update() error {
 	if g.rnd == nil {
 		g.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 
 	// init walls
-	g.walls = make([]point, 0)
-	for i := 0; i < screenWidth; i++ {
-		g.walls = append(
-			g.walls,
-			point{
-				x: i,
-				y: 0,
-			},
-			point{
-				x: i,
-				y: screenHeight - 1,
-			},
-		)
+	if g.walls == nil {
+		g.walls = make([]point, 0)
+		for i := 0; i < screenWidth; i++ {
+			g.walls = append(
+				g.walls,
+				point{
+					x: i,
+					y: 0,
+				},
+				point{
+					x: i,
+					y: screenHeight - 1,
+				},
+			)
+		}
+
+		log.Println(len(g.walls))
 	}
 
 	// init snake
@@ -112,7 +128,7 @@ func (g *game) Update() error {
 	}
 
 	if !g.seedSowed && !g.gameOver {
-		g.seeding()
+		g.sow()
 	}
 
 	if g.gameOver && inpututil.IsKeyJustPressed(ebiten.KeySpace) {
@@ -121,17 +137,19 @@ func (g *game) Update() error {
 		g.gameOver = false
 		g.gameStarted = false
 		g.directionHandled = false
+
+		return nil
 	}
 
 	// handle input
 	if !g.directionHandled && inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
-		g.direction++
+		g.direction = (g.direction + 1) % 4
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
 	if !g.directionHandled && inpututil.IsKeyJustPressed(ebiten.KeyRight) {
-		g.direction--
+		g.direction = (g.direction + 3) % 4
 		g.directionHandled = true
 		g.gameStarted = true
 	}
@@ -160,11 +178,9 @@ func (g *game) Update() error {
 		g.gameStarted = true
 	}
 
-	g.direction = (g.direction + 4) % 4
-
 	// step
 	if g.gameStarted && !g.gameOver {
-		if g.tick%waitTicks == 0 {
+		if g.tick%g.wait() == 0 {
 			g.tick = 0
 
 			head := g.snake[0]
@@ -222,21 +238,21 @@ func (g *game) Update() error {
 
 func (g *game) Draw(screen *ebiten.Image) {
 	for i := range g.walls {
-		ebitenutil.DrawRect(screen, float64(g.walls[i].x*tileWidth), float64(g.walls[i].y*tileWidth), tileWidth, tileWidth, color.RGBA{
+		vector.DrawFilledRect(screen, float32(g.walls[i].x*tileWidth), float32(g.walls[i].y*tileWidth), tileWidth, tileWidth, color.RGBA{
 			R: 127,
 			G: 127,
 			B: 127,
 			A: 255,
-		})
+		}, false)
 	}
 
 	if g.seedSowed {
-		ebitenutil.DrawRect(screen, float64(g.seed.x*tileWidth), float64(g.seed.y*tileWidth), tileWidth, tileWidth, color.RGBA{
+		vector.DrawFilledRect(screen, float32(g.seed.x*tileWidth), float32(g.seed.y*tileWidth), tileWidth, tileWidth, color.RGBA{
 			R: 255,
 			G: 255,
 			B: 0,
 			A: 255,
-		})
+		}, false)
 	}
 
 	for i := len(g.snake) - 1; i >= 0; i-- {
@@ -257,7 +273,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 			}
 		}
 
-		ebitenutil.DrawRect(screen, float64(g.snake[i].x*tileWidth), float64(g.snake[i].y*tileWidth), tileWidth, tileWidth, c)
+		vector.DrawFilledRect(screen, float32(g.snake[i].x*tileWidth), float32(g.snake[i].y*tileWidth), tileWidth, tileWidth, c, false)
 	}
 
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(" [ Score: %d ] [ High Score: %d ]", g.score(), g.highScore))

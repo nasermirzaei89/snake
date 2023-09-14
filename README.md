@@ -3,7 +3,7 @@
 ## Run
 
 ```
-go run github.com/nasermirzaei89/snake
+go run github.com/nasermirzaei89/snake@latest
 ```
 
 ## Control
