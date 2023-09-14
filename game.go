@@ -7,7 +7,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"image/color"
-	"log"
 	"math/rand"
 	"time"
 )
@@ -93,92 +92,118 @@ func (g *game) wait() int {
 	return res
 }
 
-func (g *game) Update() error {
-	if g.rnd == nil {
-		g.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+func (g *game) initWalls() {
+	g.walls = make([]point, 0)
+	for i := 0; i < screenWidth; i++ {
+		g.walls = append(
+			g.walls,
+			point{
+				x: i,
+				y: 0,
+			},
+			point{
+				x: i,
+				y: screenHeight - 1,
+			},
+		)
+	}
+}
+
+func (g *game) initSnake() {
+
+	g.snake = []point{
+		{x: screenWidth / 2, y: screenHeight / 2},
 	}
 
-	// init walls
-	if g.walls == nil {
-		g.walls = make([]point, 0)
-		for i := 0; i < screenWidth; i++ {
-			g.walls = append(
-				g.walls,
-				point{
-					x: i,
-					y: 0,
-				},
-				point{
-					x: i,
-					y: screenHeight - 1,
-				},
-			)
-		}
+	g.snake = append(g.snake, point{x: g.snake[0].x - 1, y: g.snake[0].y})
+}
 
-		log.Println(len(g.walls))
+func (g *game) resetGame() {
+	g.snake = nil
+	g.seedSowed = false
+	g.gameOver = false
+	g.gameStarted = false
+	g.directionHandled = false
+}
+
+func (g *game) handleInput() {
+	if g.directionHandled {
+		return
 	}
 
-	// init snake
-	if g.snake == nil {
-		g.snake = []point{
-			{x: screenWidth / 2, y: screenHeight / 2},
-		}
-
-		g.snake = append(g.snake, point{x: g.snake[0].x - 1, y: g.snake[0].y})
-	}
-
-	if !g.seedSowed && !g.gameOver {
-		g.sow()
-	}
-
-	if g.gameOver && inpututil.IsKeyJustPressed(ebiten.KeySpace) {
-		g.snake = nil
-		g.seedSowed = false
-		g.gameOver = false
-		g.gameStarted = false
-		g.directionHandled = false
-
-		return nil
-	}
-
-	// handle input
-	if !g.directionHandled && inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) {
 		g.direction = (g.direction + 1) % 4
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
-	if !g.directionHandled && inpututil.IsKeyJustPressed(ebiten.KeyRight) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyRight) {
 		g.direction = (g.direction + 3) % 4
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
-	if !g.directionHandled && g.direction != directionLeft && inpututil.IsKeyJustPressed(ebiten.KeyD) {
+	if g.direction != directionLeft && inpututil.IsKeyJustPressed(ebiten.KeyD) {
 		g.direction = directionRight
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
-	if !g.directionHandled && g.direction != directionDown && inpututil.IsKeyJustPressed(ebiten.KeyW) {
+	if g.direction != directionDown && inpututil.IsKeyJustPressed(ebiten.KeyW) {
 		g.direction = directionUp
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
-	if !g.directionHandled && g.direction != directionRight && inpututil.IsKeyJustPressed(ebiten.KeyA) {
+	if g.direction != directionRight && inpututil.IsKeyJustPressed(ebiten.KeyA) {
 		g.direction = directionLeft
 		g.directionHandled = true
 		g.gameStarted = true
 	}
 
-	if !g.directionHandled && g.direction != directionUp && inpututil.IsKeyJustPressed(ebiten.KeyS) {
+	if g.direction != directionUp && inpututil.IsKeyJustPressed(ebiten.KeyS) {
 		g.direction = directionDown
 		g.directionHandled = true
 		g.gameStarted = true
 	}
+}
 
-	// step
+func (g *game) checkCrash(head point) {
+	for i := 0; i < len(g.walls); i++ {
+		if head.x == g.walls[i].x && head.y == g.walls[i].y {
+			g.gameOver = true
+		}
+	}
+}
+
+func (g *game) checkBiteSelf(head point) {
+	for i := 1; i < len(g.snake); i++ {
+		if head.x == g.snake[i].x && head.y == g.snake[i].y {
+			g.gameOver = true
+		}
+	}
+}
+func (g *game) checkEat(head point) {
+	// check eat
+	if head.x == g.seed.x && head.y == g.seed.y {
+		g.seedSowed = false
+
+		if s := g.score(); s > g.highScore {
+			g.highScore = s
+		}
+	} else {
+		g.snake = g.snake[:len(g.snake)-1]
+	}
+}
+
+func (g *game) wrapScreen(head point) point {
+	head.x = (head.x + screenWidth) % screenWidth
+	head.y = (head.y + screenHeight) % screenHeight
+
+	return head
+}
+
+func (g *game) step() {
 	if g.gameStarted && !g.gameOver {
 		if g.tick%g.wait() == 0 {
 			g.tick = 0
@@ -196,42 +221,49 @@ func (g *game) Update() error {
 				head.y++
 			}
 
-			// screen wrap
-			head.x = (head.x + screenWidth) % screenWidth
-			head.y = (head.y + screenHeight) % screenHeight
+			head = g.wrapScreen(head)
 
 			g.snake = append([]point{head}, g.snake...)
 
-			// check eat
-			if head.x == g.seed.x && head.y == g.seed.y {
-				g.seedSowed = false
+			g.checkEat(head)
 
-				if s := g.score(); s > g.highScore {
-					g.highScore = s
-				}
-			} else {
-				g.snake = g.snake[:len(g.snake)-1]
-			}
+			g.checkBiteSelf(head)
 
-			// check bite self
-			for i := 1; i < len(g.snake); i++ {
-				if head.x == g.snake[i].x && head.y == g.snake[i].y {
-					g.gameOver = true
-				}
-			}
-
-			// check crash
-			for i := 0; i < len(g.walls); i++ {
-				if head.x == g.walls[i].x && head.y == g.walls[i].y {
-					g.gameOver = true
-				}
-			}
+			g.checkCrash(head)
 
 			g.directionHandled = false
 		}
 
 		g.tick++
 	}
+}
+
+func (g *game) Update() error {
+	if g.rnd == nil {
+		g.rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	if g.walls == nil {
+		g.initWalls()
+	}
+
+	if g.snake == nil {
+		g.initSnake()
+	}
+
+	if !g.seedSowed && !g.gameOver {
+		g.sow()
+	}
+
+	if g.gameOver && inpututil.IsKeyJustPressed(ebiten.KeySpace) {
+		g.resetGame()
+
+		return nil
+	}
+
+	g.handleInput()
+
+	g.step()
 
 	return nil
 }
